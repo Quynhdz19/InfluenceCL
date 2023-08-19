@@ -9,8 +9,8 @@ av
 tqdm
 
 comet-ml
-jax
-jaxlib
+jax==0.4.13
+jaxlib==0.4.13
 neural-tangents
 scikit-learn
 scipy
