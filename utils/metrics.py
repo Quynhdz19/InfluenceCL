@@ -5,7 +5,7 @@
 
 import numpy as np
 
-
+# trung bình kết qủa cuối và kết quả trước đó
 def backward_transfer(results):
     n_tasks = len(results)
     li = []
@@ -14,7 +14,7 @@ def backward_transfer(results):
 
     return np.mean(li)
 
-
+# trung bình kết quả hiện tại và kết quả ngẫu nhiên
 def forward_transfer(results, random_results):
     n_tasks = len(results)
     li = []
@@ -30,8 +30,8 @@ def forgetting(results):
     for i in range(n_tasks - 1):
         results[i] += [0.0] * (n_tasks - len(results[i]))
     np_res = np.array(results)
-    maxx = np.max(np_res, axis=0)
+    maxx = np.max(np_res, axis=0) # tính giá trị lớn nhất cho từng cột  từ mảng result , mỗi cột tương ứng với 1 nhiệm vụ
     for i in range(n_tasks - 1):
-        li.append(maxx[i] - results[-1][i])
+        li.append(maxx[i] - results[-1][i])  # sử dụng giá trị lớn nhất của từng cột trừ đi kết qủa đang xét
 
     return np.mean(li)

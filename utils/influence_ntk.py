@@ -13,7 +13,7 @@ def cross_entropy_ntk(K, alpha, y, weights=1., lmbda=0.):
         loss += lmbda * torch.trace(torch.matmul(alpha.T, torch.matmul(K, alpha)))
     return loss
 
-
+# return maxtric hessian
 def flat_grad(grad, reshape=False, detach=False):
     # reshape implies detach
     if reshape:
@@ -27,11 +27,11 @@ def calc_hvp(loss, params, v):
     dl_p = flat_grad(grad(loss, params, create_graph=True, retain_graph=True))
     return flat_grad(grad(dl_p, params, grad_outputs=v, retain_graph=True), reshape=True)
 
-
+#trả về hai giá trị: hvp (tích vô hướng Hessian) và dl_p (độ dốc của outer_loss).
 def calc_hvp_v(inner_loss, outer_loss, params, s):
-    dl_p = flat_grad(grad(outer_loss, params, create_graph=True))
+    dl_p = flat_grad(grad(outer_loss, params, create_graph=True)) #nó tính toán độ dốc
     dl_p_in = flat_grad(grad(inner_loss, params, create_graph=True))
-    hvp = flat_grad(grad(dl_p_in, params, grad_outputs=s, create_graph=True))
+    hvp = flat_grad(grad(dl_p_in, params, grad_outputs=s, create_graph=True)) #tích vô hướng Hessian" (Hessian-vector product - HVP)
     return hvp, dl_p
 
 
@@ -41,12 +41,15 @@ class InfluenceNTK:
 
     Args:
         loss_fn (function): loss function
-        out_dim (int): output dimension
-        max_it (int): maximum number of iterations for solving the ioptimization
-        lr (float): learning rate of the optimizer (L-BFGS)
+        out_dim (int): output dimension kích thước đầu ra
+        max_it (int): maximum number of iterations for solving the ioptimization  số lần lặp tối da optimi
+        lr (float): learning rate of the optimizer (L-BFGS) tốc độ học tập của trình tối ưu hóa (L-BFGS)
         max_conj_grad_it (int): number of conjugate gradient steps in the approximate Hessian-vector products
-        candidate_batch_size (int): number of candidate points considered in each selection step
+        số bước gradient liên hợp trong tích Hessian-vector gần đúng
+        candidate_batch_size (int): number of candidate points considered in each selection step số ảnh
+        được xét trong mỗi bước tuyển chọn
         div_tol (float): divergence tolerance threshild for the optimization problem
+        ngưỡng dung sai phân kỳ cho bài toán tối ưu hóa
     """
 
     def __init__(self, out_dim=10, max_it=300, lr=0.25, max_conj_grad_it=50, div_tol=10):
@@ -65,6 +68,7 @@ class InfluenceNTK:
         alpha.data *= 0.01
 
         loss = np.inf
+        # điều kiện dừng của thuật toán khi chạy 1 ep
         while loss > self.div_tol:
 
             def closure():
@@ -98,6 +102,8 @@ class InfluenceNTK:
         weights_grad = - flat_grad(grad(dg_dtheta, weights, grad_outputs=ihvp), reshape=True)
         return weights_grad, dg_dalpha, ihvp
 
+    #inner_loss  Giá trị mất mát của inner loss function (mất mát nội tại)
+    # =>
     def calc_second_influences(self, K, alpha, y, v, s, weights, lmbda, mu=0., outer_weights=1.):
         if (outer_weights - weights).sum() > 0:
             inner_loss = self.loss_fn(K, alpha, y, outer_weights - weights, lmbda)
@@ -106,18 +112,19 @@ class InfluenceNTK:
         else:
             inner_loss = self.loss_fn(K, alpha, y, weights - outer_weights, lmbda)
             outer_loss = self.loss_fn(K, alpha, y, weights - outer_weights)
-            hvp, dl_p = calc_hvp_v(inner_loss, outer_loss, alpha, s)
-        stat = torch.norm(dl_p - mu * hvp)
+            hvp, dl_p = calc_hvp_v(inner_loss, outer_loss, alpha, s)  # tính toán hessian đạo hàm bậc 2 của hàm mất mát
+        stat = torch.norm(dl_p - mu * hvp) #đạo hàm (gradient)
         influences_ext = flat_grad(grad(stat, weights), reshape=True)
         return influences_ext, stat.detach().item()
 
+    # lựa chọn dựa trên độ ảnh hưởng
     def select(self, X, y, m, kernel_fn_np, lmbda=1e-4, mu=0., nu=0., inc_weight=1.):
         n = X.shape[0]
         chosen_indexes = np.arange(n)
 
         X = X.numpy()
         K = torch.from_numpy(kernel_fn_np(X, X)).float()
-
+        # đánh giấu sự mất mát
         outer_weights = torch.ones([n])
         outer_weights[m:] = inc_weight
         weights = torch.ones([n], requires_grad=True)

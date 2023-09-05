@@ -108,6 +108,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
             random_results_class, random_results_task = evaluate(model, dataset_copy)
 
     print(file=sys.stderr)
+    #train model
     for t in range(dataset.N_TASKS):
         model.net.train()
         train_loader, test_loader = dataset.get_data_loaders()
@@ -135,8 +136,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
                     loss = model.meta_observe(inputs, labels, not_aug_inputs, logits)
                 else:
                     inputs, labels, not_aug_inputs = data
-                    inputs, labels = inputs.to(model.device), labels.to(
-                        model.device)
+                    inputs, labels = inputs.to(model.device), labels.to(model.device)
                     not_aug_inputs = not_aug_inputs.to(model.device)
                     loss = model.meta_observe(inputs, labels, not_aug_inputs)
                 assert not math.isnan(loss)
@@ -169,7 +169,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
             wandb.log(d2)
 
 
-
+    # tạo bản sao để đánh giá forgetting
     if not args.disable_log and not args.ignore_other_metrics:
         logger.add_bwt(results, results_mask_classes)
         logger.add_forgetting(results, results_mask_classes)

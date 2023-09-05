@@ -56,25 +56,27 @@ class SOIF(ContinualModel):
             labels = torch.cat((labels, buf_labels))
 
         outputs = self.net(inputs)
-        loss = self.loss(outputs, labels)
-        loss.backward()
-        self.opt.step()
+        loss = self.loss(outputs, labels) # check dự đoán outputs và label là mẫu
+        loss.backward() # học lại từ những cái sai
+        self.opt.step() # học sang bước tiếp theo
 
         if self.epoch in self.args.sel_epoch:
             inputs = inputs if self.args.norig else not_aug_inputs
-            if self.buffer.num_seen_examples < self.args.buffer_size:
+            if self.buffer.num_seen_examples < self.args.buffer_size: # thêm thông tin mới vào bộ nhớ
                 self.buffer.add_data(examples=inputs[:real_batch_size],
                                      labels=labels[:real_batch_size])
             else:
-                inc_weight = real_batch_size / self.buffer.num_seen_examples
+                inc_weight = real_batch_size / self.buffer.num_seen_examples # tính toán thông tin mới có ảnh hướng lớn hay không
                 buf_inputs, buf_labels = self.buffer.get_all_data()
-                inputs = torch.cat((inputs[:real_batch_size], buf_inputs))
+                inputs = torch.cat((inputs[:real_batch_size], buf_inputs)) #trộn mới vào cũ
                 labels = torch.cat((labels[:real_batch_size], buf_labels))
                 chosen_indexes = self.ifs.select(inputs.cpu(), labels.cpu(), self.buffer.buffer_size, self.kernel_fn,
-                                                 self.args.lmbda, self.args.mu, self.args.nu, inc_weight)[0]
-                out_indexes = np.setdiff1d(np.arange(self.buffer.buffer_size), chosen_indexes - real_batch_size)
-                in_indexes = chosen_indexes[chosen_indexes < real_batch_size]
-                self.buffer.replace_data(out_indexes, inputs[in_indexes], labels[in_indexes])
+                                                 self.args.lmbda, self.args.mu, self.args.nu, inc_weight)[0] # lựa trọn thông tin
+                out_indexes = np.setdiff1d(np.arange(self.buffer.buffer_size), chosen_indexes - real_batch_size) # bỏ đi thằng k quan trọng
+                in_indexes = chosen_indexes[chosen_indexes < real_batch_size] # tính toán thông tin mới
+                self.buffer.replace_data(out_indexes, inputs[in_indexes], labels[in_indexes]) # update new vào bộ nhớ
                 self.buffer.num_seen_examples += real_batch_size
 
-        return loss.item()
+        return loss.item() # trả loss con số
+
+
