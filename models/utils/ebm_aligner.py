@@ -9,9 +9,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from utils.process_fp import process_inputs_fp
-
-
 class EBMAligner:
     """Manages the lifecycle of the proposed Energy Based Latent Alignment.
     """
