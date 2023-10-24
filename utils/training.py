@@ -53,32 +53,38 @@ def evaluate(model: ContinualModel, dataset: ContinualDataset, aligner: EBMAlign
             continue
         correct, correct_mask_classes, total = 0.0, 0.0, 0.0
         for data in test_loader:
-            with torch.no_grad():
-                inputs, labels = data
-                inputs, labels = inputs.to(model.device), labels.to(model.device)
-                if 'class-il' not in model.COMPATIBILITY:
-                    if evaluate_with_ebm: 
+            # with torch.no_grad():
+            inputs, labels = data
+            inputs, labels = inputs.to(model.device), labels.to(model.device)
+            if 'class-il' not in model.COMPATIBILITY:
+                if evaluate_with_ebm: 
+                    if k != len(dataset.test_loaders) - 1:
                         z = model.net(inputs, 'features')
                         z = aligner.align_latents(z)
                         outputs = model.net.get_output(z)
-                    else:     
+                    else: 
                         outputs = model(inputs, k)
-                else:
-                    if evaluate_with_ebm: 
+                else:     
+                    outputs = model(inputs, k)
+            else:
+                if evaluate_with_ebm:
+                    if k < len(dataset.test_loaders) - 1: 
                         z = model.net(inputs, 'features')
                         z = aligner.align_latents(z)
                         outputs = model.net.get_output(z)
-                    else:  
+                    else: 
                         outputs = model(inputs)
+                else:  
+                    outputs = model(inputs)
 
+            _, pred = torch.max(outputs.data, 1)
+            correct += torch.sum(pred == labels).item()
+            total += labels.shape[0]
+
+            if dataset.SETTING == 'class-il':
+                mask_classes(outputs, dataset, k)
                 _, pred = torch.max(outputs.data, 1)
-                correct += torch.sum(pred == labels).item()
-                total += labels.shape[0]
-
-                if dataset.SETTING == 'class-il':
-                    mask_classes(outputs, dataset, k)
-                    _, pred = torch.max(outputs.data, 1)
-                    correct_mask_classes += torch.sum(pred == labels).item()
+                correct_mask_classes += torch.sum(pred == labels).item()
 
         accs.append(correct / total * 100
                     if 'class-il' in model.COMPATIBILITY else 0)
@@ -137,7 +143,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
                 results_mask_classes[t-1] = results_mask_classes[t-1] + accs[1]
 
         scheduler = dataset.get_scheduler(model, args)
-        for epoch in range(model.args.n_epochs):
+        for epoch in range(49):
             if args.model == 'joint':
                 continue
             for i, data in enumerate(train_loader):
@@ -181,7 +187,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
         print_mean_accuracy(mean_acc, t + 1, dataset.SETTING)
         
         mean_acc_with_ebm = np.mean(accs_with_ebm, axis=1)
-        print_mean_accuracy(mean_acc_with_ebm, t + 1, dataset.SETTING)
+        print_mean_accuracy(mean_acc_with_ebm, t + 1, dataset.SETTING, True)
 
         if not args.disable_log:
             logger.log(mean_acc)
@@ -215,12 +221,12 @@ def train(model: ContinualModel, dataset: ContinualDataset,
             logger.add_fwt(results, random_results_class,
                     results_mask_classes, random_results_task)
 
-    if not args.disable_log:
-        logger.write(vars(args))
-        if not args.nowand:
-            d = logger.dump()
-            d['wandb_url'] = wandb.run.get_url()
-            wandb.log(d)
+    # if not args.disable_log:
+    #     logger.write(vars(args))
+    #     if not args.nowand:
+    #         d = logger.dump()
+    #         d['wandb_url'] = wandb.run.get_url()
+    #         wandb.log(d)
 
     if not args.nowand:
         wandb.finish()

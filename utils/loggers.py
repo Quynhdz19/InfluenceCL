@@ -19,7 +19,7 @@ useless_args = ['dataset', 'tensorboard', 'validation', 'model',
 
 
 def print_mean_accuracy(mean_acc: np.ndarray, task_number: int,
-                        setting: str) -> None:
+                        setting: str, with_ebm = False) -> None:
     """
     Prints the mean accuracy on stderr.
     :param mean_acc: mean accuracy value
@@ -28,14 +28,23 @@ def print_mean_accuracy(mean_acc: np.ndarray, task_number: int,
     """
     if setting == 'domain-il':
         mean_acc, _ = mean_acc
-        print('\nAccuracy for {} task(s): {} %'.format(
-            task_number, round(mean_acc, 2)), file=sys.stderr)
+
+        if with_ebm == True:
+            print('\nAccuracy combining with ELI for {} task(s): {} %'.format(
+                task_number, round(mean_acc, 2)), file=sys.stderr)
+        else:
+            print('\nAccuracy for {} task(s): {} %'.format(
+                task_number, round(mean_acc, 2)), file=sys.stderr)
     else:
         mean_acc_class_il, mean_acc_task_il = mean_acc
-        print('\nAccuracy for {} task(s): \t [Class-IL]: {} %'
+        if with_ebm == True:
+            print('\nAccuracy combining with ELI for {} task(s): \t [Class-IL]: {} %'
               ' \t [Task-IL]: {} %\n'.format(task_number, round(
                   mean_acc_class_il, 2), round(mean_acc_task_il, 2)), file=sys.stderr)
-
+        else:
+            print('\nAccuracy for {} task(s): \t [Class-IL]: {} %'
+              ' \t [Task-IL]: {} %\n'.format(task_number, round(
+                  mean_acc_class_il, 2), round(mean_acc_task_il, 2)), file=sys.stderr)
 
 class Logger:
     def __init__(self, setting_str: str, dataset_str: str,
