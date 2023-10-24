@@ -135,15 +135,15 @@ class EBMAligner:
             ebm_optimizer.zero_grad()
 
             try:
-                inputs, _ = next(data_iter)
+                inputs = next(data_iter)
                 # exemplars, _ = next(exemplar_iter)
             except (OSError, StopIteration):
                 data_iter = iter(current_task_dataloader)
-                inputs, _ = next(data_iter)
+                inputs = next(data_iter)
                 # exemplar_iter = iter(exemplar_plus_current_dataloader)
                 # exemplars, _ = next(exemplar_iter)
 
-            inputs = inputs.cuda()
+            inputs = inputs[0].cuda()
             if use_mixup:
                 alpha = np.random.beta(args.beta_param_1, args.beta_param_2)
             else:
