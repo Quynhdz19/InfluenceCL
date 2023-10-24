@@ -160,8 +160,8 @@ class EBMAligner:
             #         prev_z = process_inputs_fp(args, ref_fusion_vars, prev_model, ref_b2_model, inputs, feature_mode=True)
             #     current_z = process_inputs_fp(args, fusion_vars, current_model, b2_model, inputs, feature_mode=True)
             # else:
-            prev_z = prev_model.features(inputs)
-            current_z = current_model.features(inputs)
+            prev_z = prev_model.net(inputs, 'features')
+            current_z = current_model.net(inputs, 'features')
 
             self.requires_grad(ebm, False)
             sampled_z = self.sampler(ebm, current_z.clone().detach(), langevin_steps=self.n_langevin_steps,
@@ -207,7 +207,7 @@ class EBMAligner:
         for inputs, labels in validation_data:
             inputs = inputs.cuda()
             labels = labels.cuda()
-            current_z = current_model.features(inputs)
+            current_z = current_model.net(inputs, 'features')
             aligned_z = self.align_latents(current_z)
 
             output = previous_model.get_output(aligned_z)
@@ -217,7 +217,7 @@ class EBMAligner:
         for inputs, labels in validation_data_all_class:
             inputs = inputs.cuda()
             labels = labels.cuda()
-            current_z = current_model.features(inputs)
+            current_z = current_model.net(inputs, 'features')
             aligned_z = self.align_latents(current_z)
 
             output = current_model.get_output(aligned_z)
@@ -236,7 +236,7 @@ class EBMAligner:
         for inputs, labels in validation_data:
             inputs = inputs.cuda()
             labels = labels.cuda()
-            current_z = current_model.features(inputs)
+            current_z = current_model.net(inputs, 'features')
             aligned_z = self.align_latents(current_z)
 
             output = previous_model.get_output(aligned_z)
@@ -266,7 +266,7 @@ class EBMAligner:
         #     for inputs, labels in validation_data[i]['test']:
         #         inputs = inputs.cuda()
         #         labels = labels.cuda()
-        #         current_z = current_model.features(inputs)
+        #         current_z = current_model.net(inputs, 'features')
         #         aligned_z = self.align_latents(current_z)
         #
         #         output = previous_model.get_output(aligned_z)
@@ -277,7 +277,7 @@ class EBMAligner:
             for inputs, labels in validation_data[i]['test']:
                 inputs = inputs.cuda()
                 labels = labels.cuda()
-                current_z = current_model.features(inputs)
+                current_z = current_model.net(inputs, 'features')
 
                 if i != task_id:
                     aligned_z = self.align_latents(current_z)
@@ -293,7 +293,7 @@ class EBMAligner:
         #         for inputs, labels in validation_data[i]['train']:
         #             inputs = inputs.cuda()
         #             labels = labels.cuda()
-        #             current_z = current_model.features(inputs)
+        #             current_z = current_model.net(inputs, 'features')
         #
         #             if i != task_id:
         #                 aligned_z = self.align_latents(current_z)
@@ -376,7 +376,7 @@ class EBMAligner:
             #     z_prev_tasks = process_inputs_fp(args, fusion_vars, current_model, b2_model, inputs_prev_tasks,
             #                                      feature_mode=True)
             # else:
-            z_prev_tasks = current_model.features(inputs_prev_tasks)
+            z_prev_tasks = current_model.net(inputs_prev_tasks, 'features')
             aligned_z_prev_tasks = self.align_latents(z_prev_tasks)
             if z is not None:
                 z = torch.cat((z, aligned_z_prev_tasks))
