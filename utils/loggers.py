@@ -30,18 +30,18 @@ def print_mean_accuracy(mean_acc: np.ndarray, task_number: int,
         accs, tasks = mean_acc
         for i, acc in enumerate(accs): 
             if with_ebm == True:
-                print('\nAccuracy ELI for task {}: {} %'.format(
+                print('\nAccuracy ELI Class-IL for task {}: {} %'.format(
                 i + 1, round(acc, 2)), file=sys.stderr)
             else:
-                print('\nAccuracy for task {}: {} %'.format(
+                print('\nAccuracy for Class-IL task {}: {} %'.format(
                     i + 1, round(acc, 2)), file=sys.stderr)
         
         for i, task in enumerate(tasks): 
             if with_ebm == True:
-                print('\nAccuracy ELI for task ====  {}: {} %'.format(
+                print('\nAccuracy ELI Task-IL for task ====  {}: {} %'.format(
                 i + 1, round(task, 2)), file=sys.stderr)
             else:
-                print('\nAccuracy for task ====  {}: {} %'.format(
+                print('\nAccuracy Task-IL for task ====  {}: {} %'.format(
                     i + 1, round(task, 2)), file=sys.stderr)
         return
 
