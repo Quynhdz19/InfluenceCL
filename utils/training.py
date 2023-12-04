@@ -7,6 +7,7 @@ import math
 import sys
 from argparse import Namespace
 from typing import Tuple
+import copy
 
 import torch
 from datasets import get_dataset
@@ -15,6 +16,7 @@ from models.utils.continual_model import ContinualModel
 
 from utils.loggers import *
 from utils.status import ProgressBar
+from models.utils.ebm_aligner import EBMAligner
 
 try:
     import wandb
@@ -35,7 +37,7 @@ def mask_classes(outputs: torch.Tensor, dataset: ContinualDataset, k: int) -> No
                dataset.N_TASKS * dataset.N_CLASSES_PER_TASK] = -float('inf')
 
 
-def evaluate(model: ContinualModel, dataset: ContinualDataset, last=False) -> Tuple[list, list]:
+def evaluate(model: ContinualModel, dataset: ContinualDataset, aligner: EBMAligner = None, evaluate_with_ebm = False, last=False) -> Tuple[list, list]:
     """
     Evaluates the accuracy of the model for each past task.
     :param model: the model to be evaluated
@@ -51,22 +53,38 @@ def evaluate(model: ContinualModel, dataset: ContinualDataset, last=False) -> Tu
             continue
         correct, correct_mask_classes, total = 0.0, 0.0, 0.0
         for data in test_loader:
-            with torch.no_grad():
-                inputs, labels = data
-                inputs, labels = inputs.to(model.device), labels.to(model.device)
-                if 'class-il' not in model.COMPATIBILITY:
+            # with torch.no_grad():
+            inputs, labels = data
+            inputs, labels = inputs.to(model.device), labels.to(model.device)
+            if 'class-il' not in model.COMPATIBILITY:
+                if evaluate_with_ebm: 
+                    if k != len(dataset.test_loaders) - 1:
+                        z = model.net(inputs, 'features')
+                        z = aligner.align_latents(z)
+                        outputs = model.net.get_output(z)
+                    else: 
+                        outputs = model(inputs, k)
+                else:     
                     outputs = model(inputs, k)
-                else:
+            else:
+                if evaluate_with_ebm:
+                    if k < len(dataset.test_loaders) - 1: 
+                        z = model.net(inputs, 'features')
+                        z = aligner.align_latents(z)
+                        outputs = model.net.get_output(z)
+                    else: 
+                        outputs = model(inputs)
+                else:  
                     outputs = model(inputs)
 
-                _, pred = torch.max(outputs.data, 1)
-                correct += torch.sum(pred == labels).item()
-                total += labels.shape[0]
+            _, pred = torch.max(outputs.data, 1)
+            correct += torch.sum(pred == labels).item()
+            total += labels.shape[0]
 
-                if dataset.SETTING == 'class-il':
-                    mask_classes(outputs, dataset, k)
-                    _, pred = torch.max(outputs.data, 1)
-                    correct_mask_classes += torch.sum(pred == labels).item()
+            if dataset.SETTING == 'class-il':
+                mask_classes(outputs, dataset, k)
+                _, pred = torch.max(outputs.data, 1)
+                correct_mask_classes += torch.sum(pred == labels).item()
 
         accs.append(correct / total * 100
                     if 'class-il' in model.COMPATIBILITY else 0)
@@ -92,7 +110,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
         args.wandb_url = wandb.run.get_url()
 
     model.net.to(model.device)
-    results, results_mask_classes = [], []
+    results, results_with_ebm, results_mask_classes, results_with_ebm_mask_classes = [], [], [], []
 
     if not args.disable_log:
         logger = Logger(dataset.SETTING, dataset.NAME, model.NAME)
@@ -110,6 +128,10 @@ def train(model: ContinualModel, dataset: ContinualDataset,
     print(file=sys.stderr)
     #train model
     for t in range(dataset.N_TASKS):
+        EBMAlignerObject = EBMAligner
+        aligner = EBMAlignerObject(ebm_latent_dim=512)
+        
+        untrained_model = copy.deepcopy(model)
         model.net.train()
         train_loader, test_loader = dataset.get_data_loaders()
         if hasattr(model, 'begin_task'):
@@ -121,7 +143,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
                 results_mask_classes[t-1] = results_mask_classes[t-1] + accs[1]
 
         scheduler = dataset.get_scheduler(model, args)
-        for epoch in range(model.args.n_epochs):
+        for epoch in range(50):
             if args.model == 'joint':
                 continue
             for i, data in enumerate(train_loader):
@@ -150,16 +172,34 @@ def train(model: ContinualModel, dataset: ContinualDataset,
         if hasattr(model, 'end_task'):
             model.end_task(dataset)
 
-        accs = evaluate(model, dataset)
+        aligner.learn_ebm(untrained_model, model, train_loader)
+
+        accs_with_ebm = evaluate(model, dataset, aligner, evaluate_with_ebm=True)
+        accs = evaluate(model, dataset, aligner, evaluate_with_ebm=False)
+
+        print("================ Accurency for each task of task {} ===============".format(t + 1))
+        print_mean_accuracy(accs, t + 1, dataset.SETTING, False, True)
+        print_mean_accuracy(accs_with_ebm, t + 1, dataset.SETTING, True, True)
+        
+        results_with_ebm.append(accs_with_ebm[0])
+        results_with_ebm_mask_classes.append(accs_with_ebm[1])
+        
         results.append(accs[0])
         results_mask_classes.append(accs[1])
 
         mean_acc = np.mean(accs, axis=1)
+        print("================ Average accuracy for task {} ===============".format(t + 1))
         print_mean_accuracy(mean_acc, t + 1, dataset.SETTING)
+        
+        mean_acc_with_ebm = np.mean(accs_with_ebm, axis=1)
+        print_mean_accuracy(mean_acc_with_ebm, t + 1, dataset.SETTING, True)
 
         if not args.disable_log:
             logger.log(mean_acc)
             logger.log_fullacc(accs)
+            
+            logger.log(mean_acc_with_ebm)
+            logger.log_fullacc(mean_acc_with_ebm)
 
         if not args.nowand:
             d2={'RESULT_class_mean_accs': mean_acc[0], 'RESULT_task_mean_accs': mean_acc[1],
@@ -167,22 +207,31 @@ def train(model: ContinualModel, dataset: ContinualDataset,
                 **{f'RESULT_task_acc_{i}': a for i, a in enumerate(accs[1])}}
 
             wandb.log(d2)
+            
+            d3={'RESULT_class_mean_accs_with_ebm': mean_acc[0], 'RESULT_task_mean_accs_with_ebm': mean_acc_with_ebm[1],
+                **{f'RESULT_class_acc_with_ebm_{i}': a for i, a in enumerate(accs_with_ebm[0])},
+                **{f'RESULT_task_acc_with_ebm_{i}': a for i, a in enumerate(accs_with_ebm[1])}}
+
+            wandb.log(d3)
 
 
     # tạo bản sao để đánh giá forgetting
     if not args.disable_log and not args.ignore_other_metrics:
         logger.add_bwt(results, results_mask_classes)
         logger.add_forgetting(results, results_mask_classes)
+        
+        logger.add_bwt(results_with_ebm, results_with_ebm_mask_classes)
+        logger.add_forgetting(results_with_ebm, results_with_ebm_mask_classes)
         if model.NAME != 'icarl' and model.NAME != 'pnn':
             logger.add_fwt(results, random_results_class,
                     results_mask_classes, random_results_task)
 
-    if not args.disable_log:
-        logger.write(vars(args))
-        if not args.nowand:
-            d = logger.dump()
-            d['wandb_url'] = wandb.run.get_url()
-            wandb.log(d)
+    # if not args.disable_log:
+    #     logger.write(vars(args))
+    #     if not args.nowand:
+    #         d = logger.dump()
+    #         d['wandb_url'] = wandb.run.get_url()
+    #         wandb.log(d)
 
     if not args.nowand:
         wandb.finish()
